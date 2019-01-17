@@ -1,0 +1,143 @@
+#!/bin/sh
+
+##########################################
+# generates a script for volume creation #
+# initial version author: Alex Kalinin   #
+##########################################
+NUMLIMIT=100
+
+##################
+# initialization #
+##################
+volgen_init () {
+    # check parameter
+    CONFFILE="$1"
+    if [ "$CONFFILE" == "" ]; then
+        echo "specify configuration file as a parameter"
+        usage
+        exit 1
+    fi
+
+    # check if config file exists
+    if [ ! -f $CONFFILE ]; then
+        echo "file $CONFFILE doesn't exist"
+        exit 1
+    fi
+
+    # check if config file is readable
+    if [ ! -r $CONFFILE ]; then
+        echo "file $CONFFILE is not readable, check permissions"
+        exit 1
+    fi
+  
+    STARTDATE="$2"
+    date -d ${STARTDATE} >>/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "check your start date, 'date -d' doesn't like it"
+        exit 1
+    fi
+
+    NUMINT="$3"
+    if [ $NUMINT -le 0 ] || [ $NUMINT -gt $NUMLIMIT ]; then
+        echo "$NUMINT volumes is out of allowed bounds (1..100)"
+        exit 1
+    fi
+}
+
+###################################
+# read and validate configuration #
+###################################
+read_config() {
+ 
+    unset VCLUSTER VPATH VNAME VMINREP VREP VTYPE VOWNER VGROUP VAE VTOPOLOGY VINTERVAL
+    PATH=$PATH:.
+    source $CONFFILE
+
+    # check config data
+    checkvar "$VCLUSTER" VCLUSTER
+    checkvar "$VPATH" VPATH
+    checkvar "$VNAME" VNAME
+    checkvar "$VMINREP" VMINREP
+    checkvar "$VREP" VREP
+    checkvar "$VTYPE" VTYPE
+    checkvar "$VOWNER" VOWNER
+    checkvar "$VGROUP" VGROUP
+    checkvar "$VAE" VAE
+    checkvar "$VTOPOLOGY" VTOPOLOGY
+    checkvar "$VINTERVAL" VINTERVAL
+
+    # addtional check on the interval correctness
+    /bin/sh -c "date -d '1 $VINTERVAL'" 2>&1 >>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "Check VINTERVAL=$VINTERVAL conf variable"
+        exit 1
+    fi
+}
+
+############################
+# Check if variable is set #
+############################
+checkvar () {
+    if [ "$1" == "" ]; then
+        echo "variable '$2' is not set, check config"
+        exit 1
+    fi
+}
+
+###########################
+# pre-create root dirs    #
+###########################
+create_base_dirs () {
+    D=0
+    # loop through all days
+    while [ $D -lt $NUMINT ]; do
+        CVPATH=`date +$VPATH -d "$STARTDATE $D $VINTERVAL"`
+        CVROOTMOUNTLIST="${CVROOTMOUNTLIST} `dirname $CVPATH`"
+        ((D++))
+    done
+
+    CVROOTMOUNTDIRS=`echo $CVROOTMOUNTLIST | sed -e 's/ /\n/g' | sort | uniq`
+    CMDDIR="hadoop fs -mkdir -p $CVROOTMOUNTDIRS"
+    CMDOWN="hadoop fs -chown $VOWNER:$VGROUP $CVROOTMOUNTDIRS"
+    echo "echo \"creating mount base directories ...\""
+    echo $CMDDIR
+    echo "echo \"changing ownership of base directories ...\""
+    echo $CMDOWN
+}
+
+###########################
+# Compute commands to run #
+###########################
+compute_commands () {
+    D=0
+    
+    # loop through all days
+    while [ $D -lt $NUMINT ]; do
+        CVPATH=`date +$VPATH -d "$STARTDATE $D $VINTERVAL"`
+        CVDATE=`date +%Y%m%d -d "$STARTDATE $D $VINTERVAL"`
+        CVNAME="$VNAME"_"$CVDATE"
+        CMDVOL="maprcli volume create -cluster $VCLUSTER -name $CVNAME -path $CVPATH -topology $VTOPOLOGY -ae $VAE -minreplication $VMINREP -replication $VREP -replicationtype $VTYPE -user $VOWNER:a,fc"
+        CMDOWN="hadoop fs -chown $VOWNER:$VGROUP $CVPATH"
+        echo "echo \"creating volume $CVNAME\""
+        echo $CMDVOL
+        echo "echo \"changing ownership to $VOWNER:$VGROUP\""
+        echo $CMDOWN
+        ((D++))    
+    done
+}
+
+#########
+# usage #
+#########
+usage () {
+    echo "*****************************************"
+    echo "volume daily partition script generator"
+    echo "usage:"
+    echo "    mrvolgen <config file> <startdate> <days>"
+    echo "    example: $ volgen silog_alt.conf 20160720 30"
+}
+
+volgen_init $*
+read_config
+create_base_dirs
+compute_commands

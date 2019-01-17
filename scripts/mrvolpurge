@@ -1,0 +1,169 @@
+#!/bin/sh
+
+########################################
+# automatic volume purge               #
+# initial version author: Alex Kalinin #
+########################################
+KEYTAB=/opt/mapr/conf/mapr.keytab
+
+##################
+# initialization #
+##################
+volpurge_init () {
+
+    # check parameter
+    CONFFILE="$1"
+    if [ "$CONFFILE" == "" ]; then
+        echo "specify configuration file as a parameter"
+        exit 1
+    fi
+
+    # check if file exists
+    if [ ! -f $CONFFILE ] || [ ! -r $CONFFILE ]; then
+        echo "can't open file $CONFFILE"
+        exit 1
+    fi
+
+    # check if keytab exists
+    if [ ! -f $KEYTAB ]; then
+        echo "keytab file doesn't exist on this node"
+        echo "check if you are on a management node"
+    fi
+    # check if keytab is readable
+    if [ ! -r $KEYTAB ]; then
+        echo "unable to read keytab: $KEYTAB"
+        echo "check permissions"
+        exit 1
+    fi
+}
+
+###################################
+# read and validate configuration #
+###################################
+read_config() {
+
+    unset VCLUSTER VNAME VRETENTION VINTERVAL
+    PATH=$PATH:.
+    source $CONFFILE
+
+    # check config data
+    checkvar "$VCLUSTER" VCLUSTER
+    checkvar "$VNAME" VNAME
+    checkvar "$VRETENTION" VRETENTION
+    checkvar "$VINTERVAL" VINTERVAL
+
+    # exit if retention is numeric
+    re='^[0-9]+$'
+    if ! [[ $VRETENTION =~ $re ]]; then
+        echo "no retention, exiting"
+        exit 0
+    fi
+}
+
+############################
+# Check if variable is set #
+############################
+checkvar () {
+    if [ "$1" == "" ]; then
+        echo "variable '$2' is not set, check config"
+        exit 1
+    fi
+}
+
+#################
+# login as mapr #
+#################
+login_as_mapr() {
+    echo "logging in as mapr user into cluster $VCLUSTER ..."
+    kinit -kt $KEYTAB mapr/`hostname -f`@FQDN
+    if [ $? -ne 0 ]; then
+        echo "unable to init kerberos with spn: mapr/`hostname -f`@FQDN"
+        exit 1
+    fi
+    maprlogin kerberos -cluster $VCLUSTER 
+    if [ $? -ne 0 ]; then
+        echo "unable to login using Kerberos into MapR cluster $VCLUSTER"
+    else
+        echo "login successful"
+    fi
+}
+
+#############################################
+# get volume list and initiate purge checks #
+#############################################
+do_purge() {
+
+    VOL_LIST=`maprcli volume list -cluster $VCLUSTER -columns volumename | grep ${VNAME}_[0-9]`
+    NVOL=`echo $VOL_LIST | wc -w`
+
+    if [ $NVOL -gt 0 ]; then
+        check_all_volumes "$VOL_LIST"
+    else
+        echo "Found no volumes by regex ${VNAME}_[0-9] , exiting."
+        exit 1
+    fi
+}
+
+#######################################
+# check list of volumes for retention #
+#######################################
+check_all_volumes () {
+    
+    for vol in $1; do
+        check_if_volume_expired $vol
+    done
+}
+
+###################################
+# check if the volume has expired #
+###################################
+check_if_volume_expired() {
+
+    vol=$1
+    # extract date
+    d=`echo $vol | sed -e 's/_/ /g' | awk '{print $NF}'`
+    
+    # check if the date is valid
+    cmd="date +%s -d '${d}'"
+    voldate=`/bin/sh -c "$cmd"`
+    if [ $? -ne 0 ]; then
+        echo "volume $vol contains incorrect date '$d'"
+        return
+    fi
+
+    # check if volume expired
+    shift=0
+    ((shift=VRETENTION+1))
+    cmd="date +%s -d '$shift $VINTERVAL ago'"
+    shiftdate=`/bin/sh -c "$cmd"`
+
+    echo "shiftdate=$shiftdate, voldate=$voldate"
+
+    if [ $shiftdate -gt $voldate ]; then
+        echo -n "removing volume $vol ..."
+        maprcli volume remove -cluster $VCLUSTER -name $vol
+        if [ $? -eq 0 ]; then
+            echo " [OK]"
+        else
+            echo " [FAILED]"
+        fi
+    fi
+}
+
+#########
+# usage #
+#########
+usage () {
+    echo "*****************************************"
+    echo "volume automatic purge script"
+    echo "usage:"
+    echo "    mrvolpurge <config file>"
+}
+
+datenow=`date +"%Y/%m/%d %H:%M:%S"`
+echo "+++ executing automatic purge at $datenow +++"
+
+volpurge_init $*
+read_config
+login_as_mapr
+do_purge

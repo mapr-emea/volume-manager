@@ -1,0 +1,11 @@
+cluster=bht01
+pathformat='/silog'yyyy/MM/dd
+name=auto_test_daily
+owner=root
+group=root
+ae=root
+aetype=1
+topology=/data
+interval=day
+retention=2
+ahead=2

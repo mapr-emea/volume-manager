@@ -1,0 +1,12 @@
+cluster=bht01
+pathformat='/silog'yyyyMM
+name=auto_test_monthly
+owner=root
+group=root
+ae=root
+aetype=1
+topology=/data
+schedule=2
+interval=month
+retention=2
+ahead=2

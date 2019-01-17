@@ -1,0 +1,11 @@
+cluster=bht01
+pathformat='/silog'/yyyy
+name=auto_test_yearly_defschedule
+owner=root
+group=root
+ae=root
+aetype=1
+topology=/data
+interval=year
+retention=2
+ahead=2

@@ -1,0 +1,18 @@
+<configuration>
+<property>
+  <name>volume.mapr.rest.nodes</name>
+  <value>node1,node2,node3</value>
+</property>
+<property>
+  <name>volume.mapr.rest.principal</name>
+  <value>mapr/node1@FQDN</value>
+</property>
+<property>
+  <name>volume.mapr.rest.keytab</name>
+  <value>/opt/mapr/conf/mapr.keytab</value>
+</property>
+<property>
+  <name>volume.groups.config.dir</name>
+  <value>./src/test/resources/conf.defschedule/vg.d</value>
+</property>
+</configuration>
