@@ -11,9 +11,10 @@ Build
 
 1. $ mvn clean package
 2. $ mvn rpm:rpm
-3. Install RPM on the node(s) where you'd like volume manager to run. 
-4. Restart Warden on the node(s) in step 3.
-5. Place volume group configuration files in /opt/mapr/volume-manager/conf/vg.d
+3. Install RPM on the node(s) where you'd like volume manager to run.
+4. Configure /opt/mapr/volume-manager/conf/volume-manager.xml
+5. Restart Warden on the node(s) in step 3.
+6. Place volume group configuration files in /opt/mapr/volume-manager/conf/vg.d
 
 Sample configuration files
 --------------------------
